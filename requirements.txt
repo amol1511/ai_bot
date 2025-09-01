@@ -3,4 +3,5 @@ google-generativeai
 python-docx
 PyMuPDF
 sentence-transformers
-
+torch
+transformers
