@@ -1,33 +1,22 @@
-# ===============================
-# RAG AI BOT WITH GEMINI + CHROMA
-# ===============================
 import streamlit as st
 import google.generativeai as genai
 import tempfile
 import docx
 import fitz  # PyMuPDF for PDFs
-from sentence_transformers import SentenceTransformer
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-import chromadb
-from chromadb.utils import embedding_functions
+from datetime import datetime
 
 # ===============================
-# CONFIGURE GEMINI
+# CONFIGURE GEMINI API
 # ===============================
-API_KEY = ""  # 🔥 Replace with st.secrets["GEMINI_KEY"] or enter in sidebar
-genai.configure(api_key=API_KEY)
+API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+genai.configure(api_key=API_KEY if API_KEY else None)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ===============================
-# EMBEDDING MODEL
-# ===============================
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-# ===============================
-# HELPERS
+# HELPER FUNCTIONS
 # ===============================
 def extract_text_from_file(uploaded_file):
-    """Extract text from PDF, DOCX, or TXT."""
+    """Extract text from PDF, DOCX, or TXT files."""
     file_type = uploaded_file.name.split('.')[-1].lower()
     text = ""
 
@@ -47,74 +36,147 @@ def extract_text_from_file(uploaded_file):
         with open(tmp_path, "r", encoding="utf-8") as f:
             text = f.read()
     else:
-        text = "Unsupported file type."
+        text = "⚠️ Unsupported file type."
+
     return text
 
 
-def create_chroma_collection(chunks):
-    """Create Chroma vector DB collection."""
-    client = chromadb.Client()
-    collection = client.create_collection(
-        name="docs",
-        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-    )
-    for i, chunk in enumerate(chunks):
-        collection.add(documents=[chunk], ids=[str(i)])
-    return collection
-
-
-def retrieve_context(query, collection, top_k=3):
-    """Retrieve top-k relevant chunks."""
-    results = collection.query(query_texts=[query], n_results=top_k)
-    return "\n".join(results["documents"][0])
-
-
-def chat_with_rag(query, collection):
-    """RAG-powered answer generation."""
-    context = retrieve_context(query, collection)
-    prompt = f"Answer the user's question using this context:\n{context}\n\nUser: {query}\nAI:"
+def chat_with_ai(prompt, context=""):
+    """Send user prompt + context to Gemini."""
     try:
-        response = model.generate_content(prompt)
+        full_prompt = f"{context}\n\nUser: {prompt}\nAI:"
+        response = model.generate_content(full_prompt)
         return response.text
     except Exception as e:
-        return f"Error: {e}"
+        return f"❌ Error: {e}"
 
 # ===============================
-# STREAMLIT UI
+# STREAMLIT PAGE CONFIG
 # ===============================
-st.set_page_config(page_title="RAG AI Bot", page_icon="🧠", layout="wide")
-st.markdown("<h1 style='text-align:center;color:#4CAF50;'>🧠 RAG AI Chatbot</h1>", unsafe_allow_html=True)
-st.sidebar.header("Settings ⚙️")
+st.set_page_config(page_title="Gemini AI Chatbot", page_icon="🤖", layout="wide")
+
+# ===============================
+# CUSTOM CSS
+# ===============================
+st.markdown("""
+    <style>
+    body {
+        background: linear-gradient(135deg, #1f1c2c, #928DAB);
+        font-family: 'Segoe UI', sans-serif;
+    }
+    .main {
+        background: transparent;
+    }
+    .chat-box {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 20px;
+        max-width: 900px;
+        margin: auto;
+        height: 65vh;
+        overflow-y: auto;
+        scroll-behavior: smooth;
+    }
+    .chat-bubble-user {
+        background: #4a90e2;
+        color: white;
+        padding: 12px 15px;
+        border-radius: 18px;
+        margin: 10px;
+        text-align: right;
+        max-width: 70%;
+        margin-left: auto;
+    }
+    .chat-bubble-ai {
+        background: #2ecc71;
+        color: white;
+        padding: 12px 15px;
+        border-radius: 18px;
+        margin: 10px;
+        text-align: left;
+        max-width: 70%;
+        margin-right: auto;
+    }
+    .input-container {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 15px;
+        border-radius: 15px;
+        margin-top: 10px;
+    }
+    .stTextInput>div>div>input {
+        border-radius: 12px;
+    }
+    .title {
+        text-align: center;
+        font-size: 2.5em;
+        font-weight: bold;
+        color: white;
+        margin-bottom: 10px;
+    }
+    .subtitle {
+        text-align: center;
+        color: #ddd;
+        margin-bottom: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ===============================
+# TITLE
+# ===============================
+st.markdown('<div class="title">🤖 Gemini AI Chatbot</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Chat naturally or upload a document for AI-powered insights!</div>', unsafe_allow_html=True)
+
+# ===============================
+# SIDEBAR
+# ===============================
+st.sidebar.header("⚙️ Settings")
 api_key_input = st.sidebar.text_input("Enter Gemini API Key:", type="password")
 if api_key_input:
     genai.configure(api_key=api_key_input)
 
-uploaded_file = st.file_uploader("📂 Upload PDF/DOCX/TXT", type=["pdf", "docx", "txt"])
-doc_text, chunks, collection = "", [], None
-
+# File Upload
+uploaded_file = st.sidebar.file_uploader("📂 Upload a document", type=["pdf", "docx", "txt"])
+doc_text = ""
 if uploaded_file:
+    file_details = {"Filename": uploaded_file.name, "Size (KB)": round(uploaded_file.size / 1024, 2)}
+    st.sidebar.write("📄 **File Details:**", file_details)
     doc_text = extract_text_from_file(uploaded_file)
-    st.success("✅ Document uploaded and processed!")
-    
-    # Chunking
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    chunks = splitter.split_text(doc_text)
-    
-    # Vector Store
-    collection = create_chroma_collection(chunks)
-    
-    with st.expander("📖 Preview Extracted Text"):
-        st.write(doc_text[:1000] + "..." if len(doc_text) > 1000 else doc_text)
+    st.sidebar.success("✅ Document uploaded successfully!")
 
-st.markdown("---")
-user_input = st.text_input("💬 Ask me anything:", "")
+# ===============================
+# CHAT HISTORY
+# ===============================
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
+# ===============================
+# CHAT UI
+# ===============================
+with st.container():
+    st.markdown('<div class="chat-box">', unsafe_allow_html=True)
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            st.markdown(f"<div class='chat-bubble-user'>{msg['content']}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='chat-bubble-ai'>{msg['content']}</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ===============================
+# INPUT FIELD
+# ===============================
+user_input = st.text_input("💬 Type your message:", "")
 if st.button("🚀 Send"):
-    if user_input.strip() and collection:
-        answer = chat_with_rag(user_input, collection)
-        st.markdown(f"<div style='padding:10px;background:#DCF8C6;border-radius:10px;'><b>You:</b> {user_input}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='padding:10px;background:#F1F0F0;border-radius:10px;'><b>AI:</b> {answer}</div>", unsafe_allow_html=True)
+    if user_input.strip():
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        answer = chat_with_ai(user_input, doc_text)
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.experimental_rerun()
     else:
-        st.warning("Please upload a document and enter a question.")
+        st.warning("⚠️ Please enter a message.")
 
-st.markdown("<hr><center>Built with ❤️ using Gemini + Chroma + Streamlit</center>", unsafe_allow_html=True)
+# ===============================
+# FOOTER
+# ===============================
+st.markdown("<hr><center style='color:white;'>✨ Built with ❤️ using Streamlit & Gemini</center>", unsafe_allow_html=True)
