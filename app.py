@@ -3,13 +3,12 @@ import google.generativeai as genai
 import tempfile
 import docx
 import fitz  # PyMuPDF for PDFs
-from datetime import datetime
 
 # ===============================
 # CONFIGURE GEMINI API
 # ===============================
-API_KEY = st.secrets.get("GEMINI_API_KEY", "")
-genai.configure(api_key=API_KEY if API_KEY else None)
+API_KEY = "YOUR_GEMINI_API_KEY"  # 🔥 Replace this with st.secrets or your real key
+genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ===============================
@@ -36,7 +35,7 @@ def extract_text_from_file(uploaded_file):
         with open(tmp_path, "r", encoding="utf-8") as f:
             text = f.read()
     else:
-        text = "⚠️ Unsupported file type."
+        text = "Unsupported file type."
 
     return text
 
@@ -48,135 +47,42 @@ def chat_with_ai(prompt, context=""):
         response = model.generate_content(full_prompt)
         return response.text
     except Exception as e:
-        return f"❌ Error: {e}"
+        return f"Error: {e}"
 
 # ===============================
-# STREAMLIT PAGE CONFIG
+# STREAMLIT UI
 # ===============================
 st.set_page_config(page_title="Gemini AI Chatbot", page_icon="🤖", layout="wide")
 
-# ===============================
-# CUSTOM CSS
-# ===============================
-st.markdown("""
-    <style>
-    body {
-        background: linear-gradient(135deg, #1f1c2c, #928DAB);
-        font-family: 'Segoe UI', sans-serif;
-    }
-    .main {
-        background: transparent;
-    }
-    .chat-box {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 20px;
-        max-width: 900px;
-        margin: auto;
-        height: 65vh;
-        overflow-y: auto;
-        scroll-behavior: smooth;
-    }
-    .chat-bubble-user {
-        background: #4a90e2;
-        color: white;
-        padding: 12px 15px;
-        border-radius: 18px;
-        margin: 10px;
-        text-align: right;
-        max-width: 70%;
-        margin-left: auto;
-    }
-    .chat-bubble-ai {
-        background: #2ecc71;
-        color: white;
-        padding: 12px 15px;
-        border-radius: 18px;
-        margin: 10px;
-        text-align: left;
-        max-width: 70%;
-        margin-right: auto;
-    }
-    .input-container {
-        background: rgba(255, 255, 255, 0.2);
-        padding: 15px;
-        border-radius: 15px;
-        margin-top: 10px;
-    }
-    .stTextInput>div>div>input {
-        border-radius: 12px;
-    }
-    .title {
-        text-align: center;
-        font-size: 2.5em;
-        font-weight: bold;
-        color: white;
-        margin-bottom: 10px;
-    }
-    .subtitle {
-        text-align: center;
-        color: #ddd;
-        margin-bottom: 20px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🤖 Gemini AI Chatbot</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Ask me anything, or upload a document and I’ll help!</p>", unsafe_allow_html=True)
 
-# ===============================
-# TITLE
-# ===============================
-st.markdown('<div class="title">🤖 Gemini AI Chatbot</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Chat naturally or upload a document for AI-powered insights!</div>', unsafe_allow_html=True)
-
-# ===============================
-# SIDEBAR
-# ===============================
-st.sidebar.header("⚙️ Settings")
+# Sidebar
+st.sidebar.header("Settings ⚙️")
 api_key_input = st.sidebar.text_input("Enter Gemini API Key:", type="password")
 if api_key_input:
     genai.configure(api_key=api_key_input)
 
-# File Upload
-uploaded_file = st.sidebar.file_uploader("📂 Upload a document", type=["pdf", "docx", "txt"])
+# Document Upload
+uploaded_file = st.file_uploader("📂 Upload a document (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 doc_text = ""
 if uploaded_file:
-    file_details = {"Filename": uploaded_file.name, "Size (KB)": round(uploaded_file.size / 1024, 2)}
-    st.sidebar.write("📄 **File Details:**", file_details)
     doc_text = extract_text_from_file(uploaded_file)
-    st.sidebar.success("✅ Document uploaded successfully!")
+    st.success("Document uploaded successfully!")
+    with st.expander("📖 Preview Extracted Text"):
+        st.write(doc_text[:1000] + "..." if len(doc_text) > 1000 else doc_text)
 
-# ===============================
-# CHAT HISTORY
-# ===============================
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# ===============================
-# CHAT UI
-# ===============================
-with st.container():
-    st.markdown('<div class="chat-box">', unsafe_allow_html=True)
-    for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            st.markdown(f"<div class='chat-bubble-user'>{msg['content']}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='chat-bubble-ai'>{msg['content']}</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================
-# INPUT FIELD
-# ===============================
+# Chat Section
+st.markdown("---")
 user_input = st.text_input("💬 Type your message:", "")
+
 if st.button("🚀 Send"):
     if user_input.strip():
-        st.session_state.messages.append({"role": "user", "content": user_input})
         answer = chat_with_ai(user_input, doc_text)
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-        st.experimental_rerun()
+        st.markdown(f"<div style='padding:10px;background:#DCF8C6;border-radius:10px;'><b>You:</b> {user_input}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='padding:10px;background:#F1F0F0;border-radius:10px;'><b>Gemini:</b> {answer}</div>", unsafe_allow_html=True)
     else:
-        st.warning("⚠️ Please enter a message.")
+        st.warning("Please enter a message.")
 
-# ===============================
-# FOOTER
-# ===============================
-st.markdown("<hr><center style='color:white;'>✨ Built with ❤️ using Streamlit & Gemini</center>", unsafe_allow_html=True)
+# Footer
+st.markdown("<hr><center>Built with ❤️ using Streamlit & Gemini</center>", unsafe_allow_html=True)
