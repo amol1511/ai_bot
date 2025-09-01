@@ -1,15 +1,15 @@
 # ===============================
-# RAG AI BOT WITH GEMINI + STREAMLIT
+# RAG AI BOT WITH GEMINI + CHROMA
 # ===============================
 import streamlit as st
 import google.generativeai as genai
 import tempfile
 import docx
 import fitz  # PyMuPDF for PDFs
-import faiss
-import numpy as np
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+import chromadb
+from chromadb.utils import embedding_functions
 
 # ===============================
 # CONFIGURE GEMINI
@@ -21,7 +21,7 @@ model = genai.GenerativeModel("gemini-1.5-flash")
 # ===============================
 # EMBEDDING MODEL
 # ===============================
-embedder = SentenceTransformer("all-MiniLM-L6-v2")  # Small & Fast
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 # ===============================
 # HELPERS
@@ -50,23 +50,28 @@ def extract_text_from_file(uploaded_file):
         text = "Unsupported file type."
     return text
 
-def create_vectorstore(chunks):
-    """Create FAISS vector store for chunks."""
-    embeddings = embedder.encode(chunks, convert_to_numpy=True)
-    dim = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dim)
-    index.add(embeddings)
-    return index, embeddings
 
-def retrieve_context(query, index, chunks, embeddings, top_k=3):
-    """Retrieve top-k relevant chunks for query."""
-    q_emb = embedder.encode([query], convert_to_numpy=True)
-    distances, idxs = index.search(q_emb, top_k)
-    return "\n".join([chunks[i] for i in idxs[0]])
+def create_chroma_collection(chunks):
+    """Create Chroma vector DB collection."""
+    client = chromadb.Client()
+    collection = client.create_collection(
+        name="docs",
+        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    )
+    for i, chunk in enumerate(chunks):
+        collection.add(documents=[chunk], ids=[str(i)])
+    return collection
 
-def chat_with_rag(query, index, chunks, embeddings):
+
+def retrieve_context(query, collection, top_k=3):
+    """Retrieve top-k relevant chunks."""
+    results = collection.query(query_texts=[query], n_results=top_k)
+    return "\n".join(results["documents"][0])
+
+
+def chat_with_rag(query, collection):
     """RAG-powered answer generation."""
-    context = retrieve_context(query, index, chunks, embeddings)
+    context = retrieve_context(query, collection)
     prompt = f"Answer the user's question using this context:\n{context}\n\nUser: {query}\nAI:"
     try:
         response = model.generate_content(prompt)
@@ -85,7 +90,7 @@ if api_key_input:
     genai.configure(api_key=api_key_input)
 
 uploaded_file = st.file_uploader("📂 Upload PDF/DOCX/TXT", type=["pdf", "docx", "txt"])
-doc_text, chunks, index, embeddings = "", [], None, None
+doc_text, chunks, collection = "", [], None
 
 if uploaded_file:
     doc_text = extract_text_from_file(uploaded_file)
@@ -96,7 +101,7 @@ if uploaded_file:
     chunks = splitter.split_text(doc_text)
     
     # Vector Store
-    index, embeddings = create_vectorstore(chunks)
+    collection = create_chroma_collection(chunks)
     
     with st.expander("📖 Preview Extracted Text"):
         st.write(doc_text[:1000] + "..." if len(doc_text) > 1000 else doc_text)
@@ -105,11 +110,11 @@ st.markdown("---")
 user_input = st.text_input("💬 Ask me anything:", "")
 
 if st.button("🚀 Send"):
-    if user_input.strip() and index:
-        answer = chat_with_rag(user_input, index, chunks, embeddings)
+    if user_input.strip() and collection:
+        answer = chat_with_rag(user_input, collection)
         st.markdown(f"<div style='padding:10px;background:#DCF8C6;border-radius:10px;'><b>You:</b> {user_input}</div>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding:10px;background:#F1F0F0;border-radius:10px;'><b>AI:</b> {answer}</div>", unsafe_allow_html=True)
     else:
         st.warning("Please upload a document and enter a question.")
 
-st.markdown("<hr><center>Built with ❤️ using Gemini + FAISS + Streamlit</center>", unsafe_allow_html=True)
+st.markdown("<hr><center>Built with ❤️ using Gemini + Chroma + Streamlit</center>", unsafe_allow_html=True)
