@@ -14,7 +14,7 @@ from chromadb.utils import embedding_functions
 # ===============================
 # CONFIGURE GEMINI
 # ===============================
-API_KEY = "AIzaSyDCdUOuFmdphaR-ODubf10LSov6_4Qv8Y8"  # 🔥 Replace with st.secrets["GEMINI_KEY"] or enter in sidebar
+API_KEY = ""  # 🔥 Replace with st.secrets["GEMINI_KEY"] or enter in sidebar
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
